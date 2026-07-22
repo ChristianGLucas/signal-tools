@@ -1,0 +1,425 @@
+// This file defines the data contracts (messages) for your Axiom package.
+// Every node's --input and --output refers to a message defined here.
+//
+// Run `axiom create message <Name>` to scaffold a new message below.
+// Run `axiom generate` to compile these definitions into language bindings in gen/.
+//
+// DOCUMENTATION
+//   Comments written directly above a message or field declaration are extracted
+//   automatically at publish time and shown in the Axiom registry as documentation.
+//   Write your descriptions there — no separate doc files needed.
+//
+//   Leading comment  (no blank line before the declaration) → registry description ✓
+//   Detached comment (blank line before the declaration)    → ignored by registry  ✗
+//
+// This file is yours to edit. Axiom only appends new message blocks — it never
+// overwrites or removes content you have written.
+
+syntax = "proto3";
+
+package christiangeorgelucas.signal_tools;
+
+// A structured, deterministic failure. Every output message carries one; it is
+// unset (empty code) on success. Nodes never crash on bad input — they return
+// this instead. Codes: INVALID_INPUT (empty/too-short signal for the requested
+// operation), INVALID_ARGUMENT (a bad parameter, e.g. a cutoff frequency at or
+// above the Nyquist frequency, or an unknown method name), LIMIT_EXCEEDED
+// (input, or a computed output, past the documented length cap), COMPUTE_ERROR
+// (the underlying scipy routine could not produce a result for this data, e.g.
+// a filter order too high for the available samples).
+message Error {
+  // Stable machine-readable code (see message-level doc for the set).
+  string code = 1;
+  // Human-readable detail naming exactly what was rejected and why.
+  string message = 2;
+}
+
+// The canonical signal envelope: a plain ordered array of numeric samples,
+// evenly spaced in time (the caller's responsibility). This is a GENERAL
+// numeric signal — sensor telemetry, biosignals (ECG/EEG), vibration,
+// mechanical, or any other 1D time series — not audio specifically. Every
+// signal input across this package is capped at 20,000 samples: this bounds
+// both CPU cost on the single-vCPU runtime and JSON payload size within the
+// platform's ~4 MiB transport cap. For longer streams, chunk and call
+// repeatedly, or decimate/downsample first.
+message Signal {
+  // The samples, in time order.
+  repeated double values = 1;
+  // Sampling rate in Hz. Required (> 0) for any node that reasons about
+  // frequency (filters, FFT, PSD, spectrogram, envelope instantaneous
+  // frequency, dominant-frequency estimate, coherence). Nodes that are purely
+  // amplitude-domain (Convolve, DetrendSignal, ApplyWindow, SmoothSignal) do
+  // not require it and pass it through unchanged when present.
+  double sample_rate_hz = 2;
+}
+
+// A designed digital filter's coefficients, in one of two equivalent forms.
+// "sos" (second-order sections) is numerically preferred and is what
+// DesignFilter returns by default; "ba" (transfer-function b/a) is provided
+// for interoperability with tools that expect it. Exactly one form is
+// populated per the `form` field.
+message FilterCoefficients {
+  // Second-order sections, flattened row-major: each section is 6 doubles
+  // [b0, b1, b2, a0, a1, a2], sections concatenated. Populated when
+  // form == "sos".
+  repeated double sos = 1;
+  // Numerator (feedforward) coefficients. Populated when form == "ba".
+  repeated double b = 2;
+  // Denominator (feedback) coefficients. Populated when form == "ba".
+  repeated double a = 3;
+  // "sos" or "ba" — which of the fields above is populated.
+  string form = 4;
+  // The sample rate the filter was designed for, Hz. Carried through so a
+  // downstream ApplyFilter/FrequencyResponse call doesn't need it repeated.
+  double sample_rate_hz = 5;
+}
+
+// Common result envelope for any node whose primary output is a signal.
+message SignalResult {
+  Signal signal = 1;
+  Error error = 2;
+}
+
+// ---- DesignFilter ----
+
+// Design a digital filter and return its coefficients (does not apply it —
+// see ApplyFilter, or use FilterSignal for design+apply in one call).
+message DesignFilterInput {
+  // "butterworth" (default), "cheby1" (Chebyshev Type I), "cheby2"
+  // (Chebyshev Type II), "bessel", or "elliptic".
+  string design = 1;
+  // "lowpass" (default), "highpass", "bandpass", or "bandstop".
+  string band_type = 2;
+  // Filter order. Must be >= 1.
+  int32 order = 3;
+  // Cutoff frequency/frequencies in Hz. One value for lowpass/highpass; two
+  // values [low, high] for bandpass/bandstop. Each must be > 0 and strictly
+  // less than the Nyquist frequency (sample_rate_hz / 2).
+  repeated double cutoff_hz = 4;
+  double sample_rate_hz = 5;
+  // Passband ripple in dB. Required (> 0) for design == "cheby1" or
+  // "elliptic"; ignored otherwise.
+  double ripple_db = 6;
+  // Stopband attenuation in dB. Required (> 0) for design == "cheby2" or
+  // "elliptic"; ignored otherwise.
+  double stopband_atten_db = 7;
+  // "sos" (default) or "ba" — which coefficient form to return.
+  string output_form = 8;
+}
+
+message DesignFilterResult {
+  FilterCoefficients coefficients = 1;
+  Error error = 2;
+}
+
+// ---- ApplyFilter ----
+
+// Apply previously-designed filter coefficients to a signal.
+message ApplyFilterInput {
+  Signal signal = 1;
+  FilterCoefficients coefficients = 2;
+  // "filtfilt" (default, zero-phase, applies the filter forward and backward
+  // — no phase distortion but doubles the effective order) or "lfilter"
+  // (single-pass, causal, introduces phase delay).
+  string mode = 3;
+}
+
+// ---- FilterSignal (design + apply convenience) ----
+
+// Design a filter and apply it to a signal in one call.
+message FilterSignalInput {
+  Signal signal = 1;
+  // "butterworth" (default), "cheby1", "cheby2", "bessel", or "elliptic".
+  string design = 2;
+  // "lowpass" (default), "highpass", "bandpass", or "bandstop".
+  string band_type = 3;
+  // Filter order. Must be >= 1. Defaults to 4 if unset (0).
+  int32 order = 4;
+  // Cutoff frequency/frequencies in Hz — one value for lowpass/highpass, two
+  // for bandpass/bandstop.
+  repeated double cutoff_hz = 5;
+  double ripple_db = 6;
+  double stopband_atten_db = 7;
+  // "filtfilt" (default) or "lfilter".
+  string mode = 8;
+}
+
+// ---- ComputeFFT ----
+
+// Compute the discrete Fourier transform of a real-valued signal.
+message ComputeFFTInput {
+  Signal signal = 1;
+  // Optional FFT length. 0 (default) uses the signal's own length. If set
+  // larger than the signal length the signal is zero-padded; if smaller, it
+  // is truncated (both are ordinary FFT semantics, not an error).
+  int32 n = 2;
+}
+
+message SpectrumResult {
+  // Frequency bin centers in Hz, 0 .. Nyquist (only the non-negative half is
+  // returned, since the input is real-valued and the spectrum is conjugate-
+  // symmetric).
+  repeated double frequencies_hz = 1;
+  repeated double magnitude = 2;
+  repeated double phase_rad = 3;
+  Error error = 4;
+}
+
+// ---- ComputePSD ----
+
+// Estimate the power spectral density of a signal.
+message ComputePSDInput {
+  Signal signal = 1;
+  // "welch" (default, averaged periodograms over overlapping segments — lower
+  // variance) or "periodogram" (single full-length estimate — higher
+  // resolution, higher variance).
+  string method = 2;
+  // Segment length for Welch's method, in samples. 0 (default) uses scipy's
+  // default (256, capped to the signal length).
+  int32 nperseg = 3;
+  // Window function applied per segment: "hann" (default), "hamming",
+  // "blackman", "bartlett", "boxcar" (rectangular/no window).
+  string window = 4;
+}
+
+message PSDResult {
+  repeated double frequencies_hz = 1;
+  // Power spectral density, units^2/Hz.
+  repeated double psd = 2;
+  Error error = 3;
+}
+
+// ---- ComputeSpectrogram ----
+
+// Compute a spectrogram (short-time Fourier transform magnitude) of a signal,
+// summarized to a bounded number of time bins to respect the transport cap.
+message ComputeSpectrogramInput {
+  Signal signal = 1;
+  // STFT segment length in samples. 0 (default) uses scipy's default (256,
+  // capped to the signal length).
+  int32 nperseg = 2;
+  // Samples of overlap between segments. 0 (default) uses nperseg / 8.
+  int32 noverlap = 3;
+  // Upper bound on the number of time bins returned. If the natural STFT
+  // would produce more, the result is downsampled (averaged) along time to
+  // this many bins. 0 defaults to 256.
+  int32 max_time_bins = 4;
+}
+
+message SpectrogramResult {
+  // Frequency bin centers, Hz, length n_freq_bins.
+  repeated double frequencies_hz = 1;
+  // Time bin centers, seconds, length n_time_bins.
+  repeated double times_s = 2;
+  // Magnitude, row-major flattened [n_freq_bins x n_time_bins]: index
+  // f * n_time_bins + t.
+  repeated double magnitude_flat = 3;
+  int32 n_freq_bins = 4;
+  int32 n_time_bins = 5;
+  Error error = 6;
+}
+
+// ---- FindPeaks ----
+
+// Locate local maxima in a signal (scipy.signal.find_peaks).
+message FindPeaksInput {
+  Signal signal = 1;
+  // Minimum peak height. Unset = no height filter.
+  optional double height = 2;
+  // Minimum vertical distance to neighboring samples to count as a peak
+  // (scipy's "threshold" parameter). Unset = no threshold filter.
+  optional double threshold = 3;
+  // Minimum horizontal distance between neighboring peaks, in samples.
+  // Unset = no distance filter.
+  optional double distance = 4;
+  // Minimum prominence. Unset = prominences still computed and returned, but
+  // not used to filter.
+  optional double prominence = 5;
+  // Minimum width, in samples. Unset = widths still computed and returned
+  // (at relative height 0.5), but not used to filter.
+  optional double width = 6;
+}
+
+message PeaksResult {
+  repeated int32 indices = 1;
+  repeated double heights = 2;
+  repeated double prominences = 3;
+  repeated double widths = 4;
+  Error error = 5;
+}
+
+// ---- ComputeEnvelope ----
+
+// Compute the analytic-signal envelope via the Hilbert transform: the
+// instantaneous amplitude and phase (and, when sample_rate_hz is set, the
+// instantaneous frequency).
+message SignalOnlyInput {
+  Signal signal = 1;
+}
+
+message EnvelopeResult {
+  // Instantaneous amplitude, same length as the input signal.
+  repeated double amplitude = 1;
+  // Instantaneous phase in radians, same length as the input signal.
+  repeated double instantaneous_phase_rad = 2;
+  // Instantaneous frequency in Hz, length (input length - 1). Only populated
+  // when the input's sample_rate_hz > 0.
+  repeated double instantaneous_frequency_hz = 3;
+  Error error = 4;
+}
+
+// ---- Convolve ----
+
+// Convolve two signals.
+message TwoSignalsInput {
+  Signal signal_a = 1;
+  Signal signal_b = 2;
+  // "full" (default, length len(a)+len(b)-1), "same" (length max(len(a),
+  // len(b)), centered), or "valid" (only fully-overlapping samples).
+  string convolve_mode = 3;
+}
+
+// ---- CrossCorrelate ----
+
+// Cross-correlate two signals (pass the same signal as both a and b, or leave
+// signal_b empty, for autocorrelation).
+message CrossCorrelateInput {
+  Signal signal_a = 1;
+  // Optional. If unset (zero-length values), signal_a is correlated with
+  // itself (autocorrelation).
+  Signal signal_b = 2;
+  // "full" (default), "same", or "valid" — see TwoSignalsInput.convolve_mode.
+  string correlate_mode = 3;
+  // If true, normalize so the zero-lag autocorrelation would be 1.0
+  // (correlation coefficient scaling). Default false (raw correlation).
+  bool normalize = 4;
+}
+
+message CrossCorrelateResult {
+  repeated double correlation = 1;
+  // Lag, in samples, for each entry of `correlation` (same length).
+  repeated int32 lags = 2;
+  Error error = 3;
+}
+
+// ---- ResampleSignal ----
+
+// Resample a signal to a target number of samples (FFT-based resampling,
+// scipy.signal.resample).
+message ResampleInput {
+  Signal signal = 1;
+  // Target number of samples. Must be >= 1 and <= 20000.
+  int32 target_length = 2;
+}
+
+// ---- DecimateSignal ----
+
+// Downsample a signal by an integer factor with anti-aliasing
+// (scipy.signal.decimate).
+message DecimateInput {
+  Signal signal = 1;
+  // Downsampling factor. Must be >= 2.
+  int32 factor = 2;
+}
+
+// ---- ApplyWindow ----
+
+// Multiply a signal by a window function.
+message ApplyWindowInput {
+  Signal signal = 1;
+  // "hann" (default), "hamming", "blackman", or "kaiser".
+  string window = 2;
+  // Kaiser beta shape parameter. Only used when window == "kaiser"; defaults
+  // to 8.6 (approximates a Blackman-Harris window) if unset (0).
+  double beta = 3;
+}
+
+// ---- DetrendSignal ----
+
+// Remove a linear or constant trend from a signal (scipy.signal.detrend).
+message DetrendInput {
+  Signal signal = 1;
+  // "linear" (default, removes the best-fit line) or "constant" (removes the
+  // mean).
+  string detrend_type = 2;
+}
+
+// ---- FrequencyResponse ----
+
+// Compute a digital filter's frequency response (magnitude, phase, and group
+// delay) via scipy.signal.freqz / group_delay — for filter analysis, not
+// application.
+message FrequencyResponseInput {
+  FilterCoefficients coefficients = 1;
+  // Number of frequency points to evaluate, 0..Nyquist. 0 (default) uses 512.
+  int32 n_points = 2;
+  // Sample rate in Hz. If unset (0), the value carried on `coefficients` is
+  // used.
+  double sample_rate_hz = 3;
+}
+
+message FrequencyResponseResult {
+  repeated double frequencies_hz = 1;
+  repeated double magnitude_db = 2;
+  repeated double phase_rad = 3;
+  // Group delay in samples, same length as frequencies_hz.
+  repeated double group_delay_samples = 4;
+  Error error = 5;
+}
+
+// ---- SmoothSignal ----
+
+// Smooth a signal with a Savitzky-Golay filter (local polynomial
+// least-squares fit).
+message SmoothInput {
+  Signal signal = 1;
+  // Window length in samples. Must be odd and >= 3, and greater than
+  // polyorder.
+  int32 window_length = 2;
+  // Order of the polynomial used to fit each window. Must be >= 1.
+  int32 polyorder = 3;
+}
+
+// ---- ComputeRMSEnvelope ----
+
+// Compute the short-time RMS (root-mean-square) energy envelope of a signal
+// over sliding windows.
+message RMSEnvelopeInput {
+  Signal signal = 1;
+  // Window size in samples. Must be >= 1.
+  int32 window_size = 2;
+  // Hop size in samples between successive windows. 0 (default) uses
+  // window_size (non-overlapping).
+  int32 hop_size = 3;
+}
+
+// ---- EstimateDominantFrequency ----
+
+// Estimate a signal's single dominant frequency (the frequency bin with peak
+// FFT magnitude, excluding DC).
+message DominantFrequencyResult {
+  double frequency_hz = 1;
+  // The magnitude at that frequency bin, for context.
+  double magnitude = 2;
+  Error error = 3;
+}
+
+// ---- ComputeCoherence ----
+
+// Compute the magnitude-squared coherence between two signals
+// (scipy.signal.coherence) — how well one signal's frequency content predicts
+// the other's, per frequency bin, from 0 (unrelated) to 1 (perfectly linearly
+// related).
+message CoherenceInput {
+  Signal signal_a = 1;
+  Signal signal_b = 2;
+  // Segment length for Welch-style averaging. 0 (default) uses scipy's
+  // default (256, capped to the shorter signal's length).
+  int32 nperseg = 3;
+}
+
+message CoherenceResult {
+  repeated double frequencies_hz = 1;
+  repeated double coherence = 2;
+  Error error = 3;
+}

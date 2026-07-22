@@ -1,0 +1,186 @@
+name: christiangeorgelucas/signal-tools
+version: 0.1.0
+language: python
+description: >-
+  Composable Axiom digital-signal-processing nodes for GENERAL numeric 1D
+  signals — IoT/sensor telemetry, biosignals (ECG/EEG), vibration/mechanical
+  data, or any other caller-supplied time series (not audio-specific, and
+  distinct from statistical/econometric time-series analysis). Covers filter
+  design (Butterworth/Chebyshev I & II/Bessel/elliptic; lowpass/highpass/
+  bandpass/bandstop) and application (lfilter/filtfilt), spectral analysis
+  (FFT, Welch/periodogram PSD, spectrogram), peak detection, the Hilbert-
+  transform envelope, convolution/cross-correlation/autocorrelation,
+  resampling/decimation, windowing, detrending, filter frequency-response
+  analysis, Savitzky-Golay smoothing, RMS energy envelopes, dominant-
+  frequency estimation, and coherence — wrapping BSD-3-Clause SciPy
+  (scipy.signal + scipy.fft) and NumPy. Every node is a stateless,
+  deterministic, single-input/single-output transform with a consistent
+  structured-error contract; degenerate input (empty, too short, invalid
+  cutoff) returns a structured error rather than crashing.
+license: MIT
+author: Christian George Lucas
+tags:
+    - dsp
+    - signal-processing
+    - filter
+    - fft
+    - spectral-analysis
+    - scipy
+    - biosignal
+    - iot
+    - vibration
+    - time-series
+nodes:
+    - name: DesignFilter
+      description: >-
+        Designs a digital IIR filter (Butterworth, Chebyshev Type I,
+        Chebyshev Type II, Bessel, or elliptic; lowpass, highpass, bandpass,
+        or bandstop) and returns its coefficients as second-order sections
+        (numerically preferred) or transfer-function b/a — without applying
+        it. Rejects a cutoff frequency at or above the Nyquist frequency, a
+        non-positive order, or a missing ripple/attenuation parameter for
+        designs that require one.
+      input: DesignFilterInput
+      output: DesignFilterResult
+    - name: ApplyFilter
+      description: >-
+        Applies previously-designed filter coefficients (second-order
+        sections or b/a) to a signal, either causally in one pass
+        (scipy.signal.lfilter — introduces phase delay) or zero-phase by
+        filtering forward and backward (scipy.signal.filtfilt — no phase
+        distortion, doubles the effective order).
+      input: ApplyFilterInput
+      output: SignalResult
+    - name: FilterSignal
+      description: >-
+        Designs a Butterworth/Chebyshev/Bessel/elliptic lowpass, highpass,
+        bandpass, or bandstop filter and applies it to a signal in a single
+        call — the convenience path when you don't need the coefficients
+        themselves (use DesignFilter + ApplyFilter, or FrequencyResponse, for
+        that).
+      input: FilterSignalInput
+      output: SignalResult
+    - name: ComputeFFT
+      description: >-
+        Computes the discrete Fourier transform of a real-valued signal via
+        scipy.fft.rfft, returning the non-negative-frequency magnitude and
+        phase spectrum with each bin's frequency in Hz (requires
+        sample_rate_hz > 0 on the input signal).
+      input: ComputeFFTInput
+      output: SpectrumResult
+    - name: ComputePSD
+      description: >-
+        Estimates the power spectral density of a signal via Welch's method
+        (averaged periodograms over overlapping windows — lower variance) or
+        a single periodogram (higher resolution, higher variance), via
+        scipy.signal.welch / scipy.signal.periodogram.
+      input: ComputePSDInput
+      output: PSDResult
+    - name: ComputeSpectrogram
+      description: >-
+        Computes a short-time Fourier transform spectrogram of a signal
+        (scipy.signal.spectrogram), summarized/downsampled along the time
+        axis to a bounded number of bins so the response stays within the
+        platform transport cap regardless of the input's length.
+      input: ComputeSpectrogramInput
+      output: SpectrogramResult
+    - name: FindPeaks
+      description: >-
+        Locates local maxima in a signal via scipy.signal.find_peaks, with
+        optional minimum-height/threshold/distance/prominence/width filters,
+        returning each peak's index, height, prominence, and width (at
+        relative height 0.5).
+      input: FindPeaksInput
+      output: PeaksResult
+    - name: ComputeEnvelope
+      description: >-
+        Computes the analytic-signal envelope of a real-valued signal via the
+        Hilbert transform (scipy.signal.hilbert): instantaneous amplitude and
+        phase at every sample, plus instantaneous frequency (when
+        sample_rate_hz is set on the input).
+      input: SignalOnlyInput
+      output: EnvelopeResult
+    - name: Convolve
+      description: >-
+        Convolves two signals via scipy.signal.fftconvolve, with the standard
+        "full" (length len(a)+len(b)-1), "same" (centered, length
+        max(len(a),len(b))), or "valid" (fully-overlapping samples only)
+        output modes.
+      input: TwoSignalsInput
+      output: SignalResult
+    - name: CrossCorrelate
+      description: >-
+        Cross-correlates two signals via scipy.signal.correlate, returning
+        the correlation value and integer lag (in samples) for each output
+        point; optionally normalized so a signal's autocorrelation at zero
+        lag is 1.0. Pass an empty signal_b (or the same signal twice) to
+        compute an autocorrelation.
+      input: CrossCorrelateInput
+      output: CrossCorrelateResult
+    - name: ResampleSignal
+      description: >-
+        Resamples a signal to a target number of samples using FFT-based
+        resampling (scipy.signal.resample) — resizes the array while
+        preserving the signal's frequency content, distinct from
+        DecimateSignal's integer-factor anti-aliased downsampling.
+      input: ResampleInput
+      output: SignalResult
+    - name: DecimateSignal
+      description: >-
+        Downsamples a signal by an integer factor with an anti-aliasing
+        low-pass filter applied before subsampling (scipy.signal.decimate),
+        preventing the aliasing that naive stride-based downsampling
+        introduces.
+      input: DecimateInput
+      output: SignalResult
+    - name: ApplyWindow
+      description: >-
+        Multiplies a signal by a window function (Hann, Hamming, Blackman, or
+        Kaiser, via scipy.signal.windows) — commonly a pre-processing step
+        before FFT/PSD analysis to reduce spectral leakage.
+      input: ApplyWindowInput
+      output: SignalResult
+    - name: DetrendSignal
+      description: >-
+        Removes a linear (best-fit line) or constant (mean) trend from a
+        signal via scipy.signal.detrend.
+      input: DetrendInput
+      output: SignalResult
+    - name: FrequencyResponse
+      description: >-
+        Computes a digital filter's frequency response — magnitude (dB),
+        phase, and group delay, evaluated at a set of frequencies from 0 to
+        Nyquist — via scipy.signal.sosfreqz/freqz and
+        scipy.signal.group_delay, for analyzing a filter's behavior without
+        applying it to data.
+      input: FrequencyResponseInput
+      output: FrequencyResponseResult
+    - name: SmoothSignal
+      description: >-
+        Smooths a signal with a Savitzky-Golay filter (scipy.signal.savgol_filter)
+        — a local polynomial least-squares fit over a sliding window — which
+        preserves peak height and width better than a moving average.
+      input: SmoothInput
+      output: SignalResult
+    - name: ComputeRMSEnvelope
+      description: >-
+        Computes the short-time RMS (root-mean-square) energy envelope of a
+        signal over sliding, optionally-overlapping windows — a simple,
+        robust measure of a signal's local energy over time.
+      input: RMSEnvelopeInput
+      output: SignalResult
+    - name: EstimateDominantFrequency
+      description: >-
+        Estimates a signal's single dominant frequency as the FFT bin with
+        peak magnitude (excluding DC), via scipy.fft.rfft. Requires
+        sample_rate_hz > 0 on the input signal.
+      input: SignalOnlyInput
+      output: DominantFrequencyResult
+    - name: ComputeCoherence
+      description: >-
+        Computes the magnitude-squared coherence between two signals via
+        scipy.signal.coherence — a per-frequency measure from 0 (unrelated)
+        to 1 (perfectly linearly related) of how well one signal's frequency
+        content predicts the other's.
+      input: CoherenceInput
+      output: CoherenceResult

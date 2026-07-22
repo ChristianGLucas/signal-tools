@@ -1,0 +1,6 @@
+# Runtime dependencies for christiangeorgelucas/signal-tools.
+# Pinned for deterministic, reproducible builds (BSD-3-Clause tree, proven to
+# build+deploy on Axiom by sibling packages stats-tools / scikit-image-tools).
+scipy==1.18.0
+numpy==2.5.1
+
