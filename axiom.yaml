@@ -1,5 +1,5 @@
 name: christiangeorgelucas/signal-tools
-version: 0.1.0
+version: 0.1.1
 language: python
 description: >-
   Composable Axiom digital-signal-processing nodes for GENERAL numeric 1D
