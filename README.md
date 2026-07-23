@@ -1,6 +1,6 @@
 # christiangeorgelucas/signal-tools
 
-Composable [Axiom](https://axiom.co) nodes for general-purpose digital signal
+Composable [Axiom](https://axiomide.com) nodes for general-purpose digital signal
 processing (DSP) on caller-supplied 1D numeric signals — IoT/sensor
 telemetry, biosignals (ECG/EEG), vibration/mechanical data, or any other
 time series. Not audio-specific (see `audio-tools` for audio-feature
