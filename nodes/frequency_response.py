@@ -22,8 +22,6 @@ def frequency_response(ax: AxiomContext, input: FrequencyResponseInput) -> Frequ
         return FrequencyResponseResult(error=err("INVALID_ARGUMENT", "sample_rate_hz must be > 0 (set it on the request or carried on coefficients)"))
 
     n_points = input.n_points if input.n_points > 0 else 512
-    if n_points > 8192:
-        return FrequencyResponseResult(error=err("LIMIT_EXCEEDED", f"n_points must be <= 8192, got {n_points}"))
 
     try:
         if coeffs.form == "sos":

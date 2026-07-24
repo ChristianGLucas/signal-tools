@@ -2,7 +2,7 @@ from scipy import signal as sps
 
 from gen.messages_pb2 import ResampleInput, SignalResult
 from gen.axiom_context import AxiomContext
-from nodes._common import err, validate_signal, signal_out, MAX_SIGNAL_LEN
+from nodes._common import err, validate_signal, signal_out
 
 
 def resample_signal(ax: AxiomContext, input: ResampleInput) -> SignalResult:
@@ -17,8 +17,8 @@ def resample_signal(ax: AxiomContext, input: ResampleInput) -> SignalResult:
         return SignalResult(error=e)
 
     target_length = input.target_length
-    if target_length < 1 or target_length > MAX_SIGNAL_LEN:
-        return SignalResult(error=err("INVALID_ARGUMENT", f"target_length must be in [1, {MAX_SIGNAL_LEN}], got {target_length}"))
+    if target_length < 1:
+        return SignalResult(error=err("INVALID_ARGUMENT", f"target_length must be >= 1, got {target_length}"))
 
     try:
         resampled = sps.resample(values, target_length)

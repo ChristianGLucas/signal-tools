@@ -37,11 +37,7 @@ message Error {
 // The canonical signal envelope: a plain ordered array of numeric samples,
 // evenly spaced in time (the caller's responsibility). This is a GENERAL
 // numeric signal — sensor telemetry, biosignals (ECG/EEG), vibration,
-// mechanical, or any other 1D time series — not audio specifically. Every
-// signal input across this package is capped at 20,000 samples: this bounds
-// both CPU cost on the single-vCPU runtime and JSON payload size within the
-// platform's ~4 MiB transport cap. For longer streams, chunk and call
-// repeatedly, or decimate/downsample first.
+// mechanical, or any other 1D time series — not audio specifically.
 message Signal {
   // The samples, in time order.
   repeated double values = 1;
@@ -308,7 +304,7 @@ message CrossCorrelateResult {
 // scipy.signal.resample).
 message ResampleInput {
   Signal signal = 1;
-  // Target number of samples. Must be >= 1 and <= 20000.
+  // Target number of samples. Must be >= 1.
   int32 target_length = 2;
 }
 

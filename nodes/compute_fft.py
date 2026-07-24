@@ -3,7 +3,7 @@ from scipy import fft as spfft
 
 from gen.messages_pb2 import ComputeFFTInput, SpectrumResult
 from gen.axiom_context import AxiomContext
-from nodes._common import err, validate_signal, to_pylist
+from nodes._common import validate_signal, to_pylist
 
 
 def compute_fft(ax: AxiomContext, input: ComputeFFTInput) -> SpectrumResult:
@@ -17,8 +17,6 @@ def compute_fft(ax: AxiomContext, input: ComputeFFTInput) -> SpectrumResult:
         return SpectrumResult(error=e)
 
     n = input.n if input.n > 0 else len(values)
-    if n > 40_000:
-        return SpectrumResult(error=err("LIMIT_EXCEEDED", f"n must be <= 40000, got {n}"))
 
     spectrum = spfft.rfft(values, n=n)
     freqs = spfft.rfftfreq(n, d=1.0 / rate)

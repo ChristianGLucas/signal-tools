@@ -10,8 +10,7 @@ def compute_spectrogram(ax: AxiomContext, input: ComputeSpectrogramInput) -> Spe
     """Computes a short-time Fourier transform spectrogram of a signal
     (scipy.signal.spectrogram, magnitude mode), summarized/downsampled
     (time-averaged) along the time axis to at most max_time_bins (default
-    256) so the response stays within the platform transport cap regardless
-    of the input signal's length. Requires sample_rate_hz > 0.
+    256) regardless of the input signal's length. Requires sample_rate_hz > 0.
     """
     values, rate, e = validate_signal(input.signal, min_len=8, require_rate=True)
     if e:
@@ -22,8 +21,6 @@ def compute_spectrogram(ax: AxiomContext, input: ComputeSpectrogramInput) -> Spe
         return SpectrogramResult(error=err("INVALID_ARGUMENT", f"nperseg ({nperseg}) must not exceed the signal length ({len(values)})"))
     noverlap = input.noverlap if input.noverlap > 0 else None
     max_time_bins = input.max_time_bins if input.max_time_bins > 0 else 256
-    if max_time_bins > 4096:
-        return SpectrogramResult(error=err("LIMIT_EXCEEDED", f"max_time_bins must be <= 4096, got {max_time_bins}"))
 
     try:
         freqs, times, mag = sps.spectrogram(values, fs=rate, nperseg=nperseg, noverlap=noverlap, mode="magnitude")

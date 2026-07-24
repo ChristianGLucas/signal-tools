@@ -17,8 +17,6 @@ def decimate_signal(ax: AxiomContext, input: DecimateInput) -> SignalResult:
     factor = input.factor
     if factor < 2:
         return SignalResult(error=err("INVALID_ARGUMENT", f"factor must be >= 2, got {factor}"))
-    if factor > 100:
-        return SignalResult(error=err("LIMIT_EXCEEDED", f"factor must be <= 100, got {factor}"))
     if len(values) <= factor:
         return SignalResult(error=err("INVALID_INPUT", f"signal length ({len(values)}) must exceed factor ({factor})"))
 

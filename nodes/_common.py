@@ -1,9 +1,8 @@
 """Shared helpers for christiangeorgelucas/signal-tools nodes.
 
 Centralizes structured Error construction, Signal <-> numpy conversion, and
-the length/finiteness bounds every node enforces on caller-controlled input
-BEFORE any scipy call — a 1-vCPU-class deployment target, and the platform's
-~4 MiB JSON transport cap applies to every response.
+the finiteness/argument validation every node enforces on caller-controlled
+input before any scipy call.
 """
 from __future__ import annotations
 
@@ -12,13 +11,6 @@ from scipy import signal as sps
 
 from gen.messages_pb2 import Error, FilterCoefficients, Signal
 
-# Cap on a single Signal's sample count. Bounds both scipy CPU cost and the
-# JSON-serialized size of any same-length output array (a ~20,000-double
-# array is well under the ~4 MiB cap even with several sibling arrays in one
-# response). For longer streams, chunk and call repeatedly, or decimate
-# first — see the Signal message doc.
-MAX_SIGNAL_LEN = 20_000
-
 VALID_DESIGNS = {"butterworth": "butter", "cheby1": "cheby1", "cheby2": "cheby2", "bessel": "bessel", "elliptic": "ellip"}
 VALID_BAND_TYPES = {"lowpass", "highpass", "bandpass", "bandstop"}
 VALID_WINDOWS = {"hann", "hamming", "blackman", "bartlett", "boxcar", "kaiser"}
@@ -26,9 +18,8 @@ VALID_WINDOWS = {"hann", "hamming", "blackman", "bartlett", "boxcar", "kaiser"}
 
 def err(code: str, message: str) -> Error:
     """Build a structured Error. Codes: INVALID_INPUT (empty/too-short
-    signal), INVALID_ARGUMENT (bad parameter), LIMIT_EXCEEDED (past a
-    documented length cap), COMPUTE_ERROR (the underlying scipy routine
-    could not produce a result for this data)."""
+    signal), INVALID_ARGUMENT (bad parameter), COMPUTE_ERROR (the
+    underlying scipy routine could not produce a result for this data)."""
     return Error(code=code, message=message)
 
 
@@ -42,8 +33,6 @@ def validate_signal(signal: Signal, *, min_len: int = 1, require_rate: bool = Fa
     None."""
     values = to_array(signal)
     n = values.size
-    if n > MAX_SIGNAL_LEN:
-        return None, None, err("LIMIT_EXCEEDED", f"{name} has {n} samples, exceeding the {MAX_SIGNAL_LEN}-sample cap")
     if n < min_len:
         return None, None, err("INVALID_INPUT", f"{name} needs at least {min_len} sample(s), got {n}")
     if n and not np.all(np.isfinite(values)):
